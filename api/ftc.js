@@ -1,14 +1,13 @@
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET");
 
-  const { fromYmd, toYmd, ctpvNm, pageNo, numOfRows } = req.query;
+  const { fromYmd, toYmd, ctpvNm } = req.query;
   const API_KEY = process.env.VITE_FTC_API_KEY;
 
   const params = new URLSearchParams({
     serviceKey: API_KEY,
-    pageNo: pageNo || "1",
-    numOfRows: numOfRows || "50",
+    pageNo: "1",
+    numOfRows: "100",
     resultType: "json",
     fromYmd,
     toYmd,
