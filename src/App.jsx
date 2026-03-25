@@ -8,7 +8,27 @@ const REGIONS = ["전체","서울특별시","경기도","인천광역시","부�
 const today = new Date();
 const formatDate = (d) => d.toISOString().slice(0,10).replace(/-/g,"");
 const nDaysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return formatDate(d); };
+
+const FNB_KEYWORDS = ["카페","커피","베이커리","빵","제과","파티쉐","디저트","케이크","쿠키","마카롱","푸드","식품","음료","라떼","티","차","주스","스무디","막걸리","와인","맥주","술","전통주","농장","농산물","유통","식당","맛집","치킨","피자","버거","파스타","샐러드","비건","채식","쌀","곡물","건강","영양","간식","스낵","떡","한과","김치","장류","소스","잼","꿀","초콜릿","아이스크림","젤라또","팝콘","견과","과일","채소"];
+const BEAUTY_KEYWORDS = ["뷰티","화장품","코스메틱","스킨","로션","크림","세럼","앰플","마스크","팩","선크림","향수","퍼퓸","네일","립","아이","파운데이션","쿠션","BB","CC","헤어","샴푸","트리트먼트","바디","샤워","비누","클렌징","필링"];
+
+const classifyBiz = (name) => {
+  const n = name.toLowerCase();
+  if (FNB_KEYWORDS.some(k => n.includes(k))) return "F&B";
+  if (BEAUTY_KEYWORDS.some(k => n.includes(k))) return "뷰티";
+  return "기타";
+};
+
+const categoryColors = { "F&B": "#10B981", "뷰티": "#E1306C", "기타": "#555" };
+
 const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.\n{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}\npopupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
+
+const CLASSIFY_SYSTEM = `당신은 한국 사업체 분류 전문가입니다. 상호명 목록을 보고 각각의 업종을 분류해주세요. 반드시 순수 JSON만 출력하세요. 마크다운 없이.
+형식: {"results": [{"name": "상호명", "category": "F&B" 또는 "뷰티" 또는 "기타", "reason": "한줄 이유"}]}
+F&B: 식음료, 베이커리, 카페, 농식품, 주류 등
+뷰티: 화장품, 스킨케어, 헤어, 네일 등
+기타: 나머지 모두`;
+
 const labelStyle = { fontSize:10, letterSpacing:3, color:"#555", textTransform:"uppercase", fontFamily:"monospace", display:"block", marginBottom:8 };
 const inputBase = { width:"100%", background:"#111", border:"1px solid #2A2A2A", borderRadius:4, padding:"11px 14px", color:"#F5F0E8", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 const primaryBtn = (d) => ({ background:d?"#222":"#F5F0E8", color:d?"#555":"#0A0A0A", border:"none", borderRadius:4, padding:"11px 24px", fontSize:12, fontFamily:"monospace", letterSpacing:2, cursor:d?"not-allowed":"pointer", textTransform:"uppercase", whiteSpace:"nowrap", transition:"all 0.2s" });
@@ -30,11 +50,15 @@ export default function BrandScout() {
   const [tab, setTab] = useState("ftc");
   const [region, setRegion] = useState("서울특별시");
   const [days, setDays] = useState("30");
+  const [categoryFilter, setCategoryFilter] = useState("전체");
   const [ftcResults, setFtcResults] = useState([]);
   const [ftcLoading, setFtcLoading] = useState(false);
   const [ftcError, setFtcError] = useState("");
   const [ftcTotal, setFtcTotal] = useState(0);
   const [selectedBiz, setSelectedBiz] = useState(null);
+  const [classifying, setClassifying] = useState(false);
+  const [classified, setClassified] = useState({});
+
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState("전체");
   const [selectedSources, setSelectedSources] = useState(SOURCES);
@@ -45,7 +69,7 @@ export default function BrandScout() {
   const [claudeSearched, setClaudeSearched] = useState(false);
 
   const fetchFTC = async () => {
-    setFtcLoading(true); setFtcError(""); setFtcResults([]); setSelectedBiz(null); setFtcTotal(0);
+    setFtcLoading(true); setFtcError(""); setFtcResults([]); setSelectedBiz(null); setFtcTotal(0); setClassified({});
     const params = new URLSearchParams({
       fromYmd: nDaysAgo(parseInt(days)),
       toYmd: formatDate(today),
@@ -59,12 +83,51 @@ export default function BrandScout() {
       setFtcTotal(total);
       const items = data?.items ?? data?.response?.body?.items?.item ?? null;
       if (!items || (Array.isArray(items) && items.length === 0)) {
-        setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return;
+        setFtcError("조회 결과가 없습니다."); return;
       }
-      setFtcResults(Array.isArray(items) ? items : [items]);
+      const list = Array.isArray(items) ? items : [items];
+      // 1차: 키워드 기반 즉시 분류
+      const initialClassified = {};
+      list.forEach(item => {
+        const name = item.bzmnNm || "";
+        initialClassified[name] = classifyBiz(name);
+      });
+      setClassified(initialClassified);
+      setFtcResults(list);
+      // 2차: Claude로 정밀 분류
+      classifyWithClaude(list, initialClassified);
     } catch(e) { setFtcError("오류: " + e.message); }
     finally { setFtcLoading(false); }
   };
+
+  const classifyWithClaude = async (list, initial) => {
+    if (!CLAUDE_KEY || CLAUDE_KEY === "none") return;
+    setClassifying(true);
+    const names = list.map(i => i.bzmnNm).filter(Boolean);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-calls":"true" },
+        body:JSON.stringify({
+          model:"claude-haiku-4-5-20251001", max_tokens:2000,
+          system: CLASSIFY_SYSTEM,
+          messages:[{ role:"user", content:`다음 상호명들을 분류해주세요:\n${names.join("\n")}` }]
+        }),
+      });
+      const d = await res.json();
+      const tb = d.content?.find(b=>b.type==="text");
+      if (!tb) return;
+      const p = JSON.parse(tb.text.trim().replace(/```json|```/g,"").trim());
+      const updated = { ...initial };
+      (p.results||[]).forEach(r => { updated[r.name] = r.category; });
+      setClassified(updated);
+    } catch {}
+    setClassifying(false);
+  };
+
+  const filteredResults = categoryFilter === "전체"
+    ? ftcResults
+    : ftcResults.filter(item => (classified[item.bzmnNm] || "기타") === categoryFilter);
 
   const toggleSource = (src) => setSelectedSources(prev => prev.includes(src) ? prev.filter(s=>s!==src) : [...prev,src]);
 
@@ -87,6 +150,10 @@ export default function BrandScout() {
   };
 
   const scoreColor = (s) => s>=8?"#10B981":s>=6?"#F59E0B":"#EF4444";
+
+  const fnbCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "F&B").length;
+  const beautyCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "뷰티").length;
+  const etcCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "기타").length;
 
   return (
     <div style={{ minHeight:"100vh", background:"#0A0A0A", color:"#F5F0E8", fontFamily:"'Georgia','Times New Roman',serif" }}>
@@ -118,23 +185,54 @@ export default function BrandScout() {
               </div>
               <button onClick={fetchFTC} disabled={ftcLoading} style={primaryBtn(ftcLoading)}>{ftcLoading?"조회중...":"조회"}</button>
             </div>
+
             {ftcLoading&&<Spinner text="공정위 DB 조회 중..." />}
             {ftcError&&<ErrBox msg={ftcError} />}
+
             {ftcResults.length>0&&(
               <div>
-                <div style={{ fontSize:12, fontFamily:"monospace", color:"#555", marginBottom:14 }}>총 <span style={{ color:"#CCC" }}>{ftcTotal.toLocaleString()}</span>건 중 {ftcResults.length}건 표시<span style={{ color:"#333", marginLeft:10 }}>· 업체명 클릭 → 상세정보</span></div>
+                {/* 카테고리 필터 */}
+                <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+                  {[
+                    ["전체", ftcResults.length, "#888"],
+                    ["F&B", fnbCount, "#10B981"],
+                    ["뷰티", beautyCount, "#E1306C"],
+                    ["기타", etcCount, "#555"],
+                  ].map(([cat, count, color])=>(
+                    <button key={cat} onClick={()=>setCategoryFilter(cat)} style={{
+                      padding:"6px 14px", borderRadius:3, fontSize:12, fontFamily:"monospace", cursor:"pointer", transition:"all 0.15s",
+                      border:`1px solid ${categoryFilter===cat ? color : "#2A2A2A"}`,
+                      background: categoryFilter===cat ? `${color}22` : "transparent",
+                      color: categoryFilter===cat ? color : "#555",
+                    }}>
+                      {cat} <span style={{ opacity:0.6 }}>({count})</span>
+                    </button>
+                  ))}
+                  {classifying && <span style={{ fontSize:11, color:"#555", fontFamily:"monospace" }}>AI 분류 중...</span>}
+                </div>
+
+                <div style={{ fontSize:12, fontFamily:"monospace", color:"#555", marginBottom:14 }}>
+                  총 <span style={{ color:"#CCC" }}>{ftcTotal.toLocaleString()}</span>건 중 {filteredResults.length}건 표시
+                  <span style={{ color:"#333", marginLeft:10 }}>· 업체명 클릭 → 상세정보</span>
+                </div>
+
                 <div style={{ display:"grid", gridTemplateColumns:selectedBiz?"1fr 280px":"1fr", gap:12 }}>
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {ftcResults.map((item,i)=>{
-                      const name=item.bzmnNm||item.pBizNm||"상호명 없음";
-                      const bizNo=item.brno||item.pBizNo;
-                      const rd=item.dclrDate||item.pRgstDe||"";
+                    {filteredResults.map((item,i)=>{
+                      const name=item.bzmnNm||"상호명 없음";
+                      const bizNo=item.brno;
+                      const rd=item.dclrDate||"";
                       const date=rd.length===8?`${rd.slice(0,4)}.${rd.slice(4,6)}.${rd.slice(6)}`:rd;
+                      const cat = classified[name] || "기타";
+                      const catColor = categoryColors[cat];
                       return (
                         <div key={i} onClick={()=>setSelectedBiz(item)} style={{ background:"#111", border:"1px solid #1E1E1E", borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"border-color 0.15s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="#333"} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E1E1E"}>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                            <div>
-                              <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:3 }}>{name}</div>
+                            <div style={{ flex:1 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+                                <div style={{ fontSize:15, color:"#F5F0E8" }}>{name}</div>
+                                <span style={{ fontSize:10, padding:"2px 7px", borderRadius:2, background:`${catColor}22`, color:catColor, fontFamily:"monospace" }}>{cat}</span>
+                              </div>
                               <div style={{ fontSize:11, fontFamily:"monospace", color:"#555" }}>
                                 {[item.ctpvNm, item.dclrInstNm].filter(Boolean).join(" · ")}
                                 {bizNo&&<span style={{ marginLeft:10 }}>사업자: {bizNo}</span>}
@@ -146,12 +244,18 @@ export default function BrandScout() {
                       );
                     })}
                   </div>
+
                   {selectedBiz&&(
                     <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"18px", height:"fit-content", position:"sticky", top:120 }}>
-                      <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>{selectedBiz.bzmnNm||selectedBiz.pBizNm}</div>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>
+                        <div style={{ fontSize:15, color:"#F5F0E8" }}>{selectedBiz.bzmnNm}</div>
+                        <span style={{ fontSize:10, padding:"2px 7px", borderRadius:2, background:`${categoryColors[classified[selectedBiz.bzmnNm]||"기타"]}22`, color:categoryColors[classified[selectedBiz.bzmnNm]||"기타"], fontFamily:"monospace", flexShrink:0, marginLeft:8 }}>
+                          {classified[selectedBiz.bzmnNm]||"기타"}
+                        </span>
+                      </div>
                       {[
                         ["통신판매업번호", selectedBiz.prmmiMnno],
-                        ["사업자등록번호", selectedBiz.brno||selectedBiz.pBizNo],
+                        ["사업자등록번호", selectedBiz.brno],
                         ["대표자명", selectedBiz.rprsvNm],
                         ["이메일", selectedBiz.rprsvEmladr],
                         ["사업장주소", selectedBiz.rnAddr],
@@ -171,6 +275,7 @@ export default function BrandScout() {
             )}
           </div>
         )}
+
         {tab==="claude"&&(
           <div>
             <p style={{ color:"#555", fontSize:13, fontFamily:"monospace", marginBottom:24, lineHeight:1.7 }}>Claude가 웹서치로 인스타그램·와디즈·중기부 등에서 팝업 적합 브랜드를 탐색합니다.</p>
