@@ -75,10 +75,12 @@ export default function BrandScout() {
         })));
         return;
       }
-      const body = data?.response?.body;
-      setFtcTotal(body?.totalCount||0);
-      const items = body?.items?.item;
-      if (!items) { setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return; }
+      const total = data?.totalCount || data?.response?.body?.totalCount || 0;
+      setFtcTotal(total);
+      const items = data?.items || data?.response?.body?.items?.item;
+      if (!items || (Array.isArray(items) && items.length === 0)) {
+        setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return;
+      }
       setFtcResults(Array.isArray(items)?items:[items]);
     } catch(e) { setFtcError("오류: "+e.message); }
     finally { setFtcLoading(false); }
