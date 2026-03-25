@@ -54,39 +54,19 @@ export default function BrandScout() {
     try {
       const res = await fetch(`/api/ftc?${params}`);
       const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } catch {
-        const xml = new DOMParser().parseFromString(text, "text/xml");
-        const code = xml.querySelector("resultCode")?.textContent;
-        if (code !== "00") { setFtcError("API 오류: " + (xml.querySelector("resultMsg")?.textContent||"알 수 없는 오류")); return; }
-        const total = parseInt(xml.querySelector("totalCount")?.textContent||"0");
-        setFtcTotal(total);
-        const items = xml.querySelectorAll("item");
-        if (!items.length) { setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return; }
-        setFtcResults(Array.from(items).map(item => ({
-          pBizNm: item.querySelector("bzmnNm")?.textContent,
-          pBizNo: item.querySelector("brno")?.textContent,
-          pSidoNm: item.querySelector("ctpvNm")?.textContent,
-          pSggNm: item.querySelector("dclrInstNm")?.textContent,
-          pMllBsNo: item.querySelector("prmmiMnno")?.textContent,
-          pRgstDe: item.querySelector("prmmiIssDt")?.textContent,
-          pSlngMthdCd: item.querySelector("slngMthdCdNm")?.textContent,
-          pBsStCd: item.querySelector("operSttusCdNm")?.textContent,
-        })));
-        return;
-      }
-      const total = data?.totalCount || data?.response?.body?.totalCount || 0;
+      const data = JSON.parse(text);
+      const total = data?.totalCount ?? data?.response?.body?.totalCount ?? 0;
       setFtcTotal(total);
-      const items = data?.items || data?.response?.body?.items?.item;
+      const items = data?.items ?? data?.response?.body?.items?.item ?? null;
       if (!items || (Array.isArray(items) && items.length === 0)) {
         setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return;
       }
-      setFtcResults(Array.isArray(items)?items:[items]);
-    } catch(e) { setFtcError("오류: "+e.message); }
+      setFtcResults(Array.isArray(items) ? items : [items]);
+    } catch(e) { setFtcError("오류: " + e.message); }
     finally { setFtcLoading(false); }
   };
 
-  const toggleSource = (src) => setSelectedSources(prev => prev.includes(src)?prev.filter(s=>s!==src):[...prev,src]);
+  const toggleSource = (src) => setSelectedSources(prev => prev.includes(src) ? prev.filter(s=>s!==src) : [...prev,src]);
 
   const claudeSearch = async () => {
     setClaudeLoading(true); setClaudeError(""); setBrands([]); setSummary(""); setClaudeSearched(true);
@@ -146,16 +126,19 @@ export default function BrandScout() {
                 <div style={{ display:"grid", gridTemplateColumns:selectedBiz?"1fr 280px":"1fr", gap:12 }}>
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                     {ftcResults.map((item,i)=>{
-                      const name=item.pBizNm||item.bzmnNm||"상호명 없음";
-                      const bizNo=item.pBizNo||item.brno;
-                      const rd=item.pRgstDe||"";
+                      const name=item.bzmnNm||item.pBizNm||"상호명 없음";
+                      const bizNo=item.brno||item.pBizNo;
+                      const rd=item.dclrDate||item.pRgstDe||"";
                       const date=rd.length===8?`${rd.slice(0,4)}.${rd.slice(4,6)}.${rd.slice(6)}`:rd;
                       return (
                         <div key={i} onClick={()=>setSelectedBiz(item)} style={{ background:"#111", border:"1px solid #1E1E1E", borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"border-color 0.15s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="#333"} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E1E1E"}>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                             <div>
                               <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:3 }}>{name}</div>
-                              <div style={{ fontSize:11, fontFamily:"monospace", color:"#555" }}>{[item.pSidoNm,item.pSggNm].filter(Boolean).join(" ")}{bizNo&&<span style={{ marginLeft:10 }}>사업자: {bizNo}</span>}</div>
+                              <div style={{ fontSize:11, fontFamily:"monospace", color:"#555" }}>
+                                {[item.ctpvNm, item.dclrInstNm].filter(Boolean).join(" · ")}
+                                {bizNo&&<span style={{ marginLeft:10 }}>사업자: {bizNo}</span>}
+                              </div>
                             </div>
                             <div style={{ fontSize:11, fontFamily:"monospace", color:"#444", whiteSpace:"nowrap", marginLeft:12 }}>{date}</div>
                           </div>
@@ -165,8 +148,16 @@ export default function BrandScout() {
                   </div>
                   {selectedBiz&&(
                     <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"18px", height:"fit-content", position:"sticky", top:120 }}>
-                      <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>{selectedBiz.pBizNm||selectedBiz.bzmnNm}</div>
-                      {[["통신판매업번호",selectedBiz.pMllBsNo],["사업자등록번호",selectedBiz.pBizNo||selectedBiz.brno],["대표자명",selectedBiz.pRprsntvNm],["사업장주소",selectedBiz.pBplcAddr],["신고일",selectedBiz.pRgstDe],["운영상태",selectedBiz.pBsStCd||selectedBiz.operSttus],["판매방식",selectedBiz.pSlngMthdCd],["취급품목",selectedBiz.pHndlItm]].filter(([,v])=>v).map(([label,val])=>(
+                      <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>{selectedBiz.bzmnNm||selectedBiz.pBizNm}</div>
+                      {[
+                        ["통신판매업번호", selectedBiz.prmmiMnno],
+                        ["사업자등록번호", selectedBiz.brno||selectedBiz.pBizNo],
+                        ["대표자명", selectedBiz.rprsvNm],
+                        ["이메일", selectedBiz.rprsvEmladr],
+                        ["사업장주소", selectedBiz.rnAddr],
+                        ["신고일", selectedBiz.dclrDate],
+                        ["운영상태", selectedBiz.operSttusCdNm],
+                      ].filter(([,v])=>v&&v!=="N/A").map(([label,val])=>(
                         <div key={label} style={{ marginBottom:10 }}>
                           <div style={{ fontSize:10, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
                           <div style={{ fontSize:13, color:"#BBB", lineHeight:1.5 }}>{val}</div>
