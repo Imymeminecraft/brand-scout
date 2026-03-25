@@ -1,39 +1,29 @@
 import { useState } from "react";
 
-const FTC_BASE = "https://apis.data.go.kr/1130000/MllBs_2Service";
-const FTC_DETAIL = "https://apis.data.go.kr/1130000/MllBsDtl_3Service";
-const API_KEY = import.meta.env.VITE_FTC_API_KEY || "";
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY || "";
-
 const CATEGORIES = ["전체", "디저트", "베이커리", "음료/카페", "식품", "전통식품"];
 const SOURCES = ["인스타그램", "와디즈", "중소벤처기업부", "소상공인시장진흥공단"];
 const sourceColors = { "인스타그램": "#E1306C", "와디즈": "#FF4F4F", "중소벤처기업부": "#2563EB", "소상공인시장진흥공단": "#059669" };
 const REGIONS = ["전체","서울특별시","경기도","인천광역시","부산광역시","대구광역시","광주광역시","대전광역시","울산광역시","세종특별자치시","강원도","충청북도","충청남도","전라북도","전라남도","경상북도","경상남도","제주특별자치도"];
-
 const today = new Date();
 const formatDate = (d) => d.toISOString().slice(0,10).replace(/-/g,"");
 const nDaysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return formatDate(d); };
-
-const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.
-{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}
-popupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
-
-const labelStyle = { fontSize: 10, letterSpacing: 3, color: "#555", textTransform: "uppercase", fontFamily: "monospace", display: "block", marginBottom: 8 };
-const inputBase = { width: "100%", background: "#111", border: "1px solid #2A2A2A", borderRadius: 4, padding: "11px 14px", color: "#F5F0E8", fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
-const primaryBtn = (disabled) => ({ background: disabled?"#222":"#F5F0E8", color: disabled?"#555":"#0A0A0A", border: "none", borderRadius: 4, padding: "11px 24px", fontSize: 12, fontFamily: "monospace", letterSpacing: 2, cursor: disabled?"not-allowed":"pointer", textTransform: "uppercase", whiteSpace: "nowrap", transition: "all 0.2s" });
+const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.\n{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}\npopupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
+const labelStyle = { fontSize:10, letterSpacing:3, color:"#555", textTransform:"uppercase", fontFamily:"monospace", display:"block", marginBottom:8 };
+const inputBase = { width:"100%", background:"#111", border:"1px solid #2A2A2A", borderRadius:4, padding:"11px 14px", color:"#F5F0E8", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+const primaryBtn = (d) => ({ background:d?"#222":"#F5F0E8", color:d?"#555":"#0A0A0A", border:"none", borderRadius:4, padding:"11px 24px", fontSize:12, fontFamily:"monospace", letterSpacing:2, cursor:d?"not-allowed":"pointer", textTransform:"uppercase", whiteSpace:"nowrap", transition:"all 0.2s" });
 
 function Spinner({ text }) {
   return (
-    <div style={{ textAlign: "center", padding: "50px 0" }}>
-      <div style={{ display: "inline-block", width: 28, height: 28, border: "1px solid #333", borderTop: "1px solid #F5F0E8", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-      <p style={{ color: "#555", fontFamily: "monospace", fontSize: 11, letterSpacing: 2, marginTop: 16, textTransform: "uppercase" }}>{text}</p>
+    <div style={{ textAlign:"center", padding:"50px 0" }}>
+      <div style={{ display:"inline-block", width:28, height:28, border:"1px solid #333", borderTop:"1px solid #F5F0E8", borderRadius:"50%", animation:"spin 1s linear infinite" }} />
+      <p style={{ color:"#555", fontFamily:"monospace", fontSize:11, letterSpacing:2, marginTop:16, textTransform:"uppercase" }}>{text}</p>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
-
 function ErrBox({ msg }) {
-  return <div style={{ background: "#1A0A0A", border: "1px solid #3A1A1A", borderRadius: 4, padding: "14px 18px", color: "#EF4444", fontFamily: "monospace", fontSize: 12, marginBottom: 16 }}>{msg}</div>;
+  return <div style={{ background:"#1A0A0A", border:"1px solid #3A1A1A", borderRadius:4, padding:"14px 18px", color:"#EF4444", fontFamily:"monospace", fontSize:12, marginBottom:16 }}>{msg}</div>;
 }
 
 export default function BrandScout() {
@@ -45,7 +35,6 @@ export default function BrandScout() {
   const [ftcError, setFtcError] = useState("");
   const [ftcTotal, setFtcTotal] = useState(0);
   const [selectedBiz, setSelectedBiz] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState("전체");
   const [selectedSources, setSelectedSources] = useState(SOURCES);
@@ -58,15 +47,15 @@ export default function BrandScout() {
   const fetchFTC = async () => {
     setFtcLoading(true); setFtcError(""); setFtcResults([]); setSelectedBiz(null); setFtcTotal(0);
     const params = new URLSearchParams({
-      serviceKey: API_KEY, pageNo: "1", numOfRows: "50", resultType: "json",
-      fromYmd: nDaysAgo(parseInt(days)), toYmd: formatDate(today),
+      fromYmd: nDaysAgo(parseInt(days)),
+      toYmd: formatDate(today),
       ...(region !== "전체" && { ctpvNm: region }),
     });
     try {
-      const res = await fetch(`${FTC_BASE}/getMllBsInfo_2?${params}`);
+      const res = await fetch(`/api/ftc?${params}`);
       const text = await res.text();
-      let parsed;
-      try { parsed = JSON.parse(text); } catch {
+      let data;
+      try { data = JSON.parse(text); } catch {
         const xml = new DOMParser().parseFromString(text, "text/xml");
         const code = xml.querySelector("resultCode")?.textContent;
         if (code !== "00") { setFtcError("API 오류: " + (xml.querySelector("resultMsg")?.textContent||"알 수 없는 오류")); return; }
@@ -86,43 +75,13 @@ export default function BrandScout() {
         })));
         return;
       }
-      const body = parsed?.response?.body;
+      const body = data?.response?.body;
       setFtcTotal(body?.totalCount||0);
       const items = body?.items?.item;
       if (!items) { setFtcError("조회 결과가 없습니다. 기간이나 지역을 조정해보세요."); return; }
       setFtcResults(Array.isArray(items)?items:[items]);
-    } catch(e) { setFtcError("API 오류: "+e.message); }
+    } catch(e) { setFtcError("오류: "+e.message); }
     finally { setFtcLoading(false); }
-  };
-
-  const fetchDetail = async (bizNo) => {
-    if (!bizNo) return;
-    setDetailLoading(true); setSelectedBiz(null);
-    const params = new URLSearchParams({ serviceKey: API_KEY, pageNo: "1", numOfRows: "1", resultType: "json", brno: bizNo });
-    try {
-      const res = await fetch(`${FTC_DETAIL}/getMllBsInfoDetail_3?${params}`);
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        const item = data?.response?.body?.items?.item;
-        if (item) setSelectedBiz(Array.isArray(item)?item[0]:item);
-      } catch {
-        const xml = new DOMParser().parseFromString(text, "text/xml");
-        const item = xml.querySelector("item");
-        if (item) setSelectedBiz({
-          pBizNm: item.querySelector("bzmnNm")?.textContent,
-          pBizNo: item.querySelector("brno")?.textContent,
-          pRprsntvNm: item.querySelector("rprsntvNm")?.textContent,
-          pBplcAddr: item.querySelector("bplcAddr")?.textContent,
-          pMllBsNo: item.querySelector("prmmiMnno")?.textContent,
-          pRgstDe: item.querySelector("prmmiIssDt")?.textContent,
-          pBsStCd: item.querySelector("operSttusCdNm")?.textContent,
-          pSlngMthdCd: item.querySelector("slngMthdCdNm")?.textContent,
-          pHndlItm: item.querySelector("hndlItmNm")?.textContent,
-        });
-      }
-    } catch {}
-    setDetailLoading(false);
   };
 
   const toggleSource = (src) => setSelectedSources(prev => prev.includes(src)?prev.filter(s=>s!==src):[...prev,src]);
@@ -132,15 +91,14 @@ export default function BrandScout() {
     const userPrompt = `다음 조건으로 팝업 스토어 제안에 적합한 한국 F&B 브랜드를 리서치해주세요:\n${keyword.trim()?`키워드: "${keyword}"`:"키워드: 없음"}\n카테고리: ${category}\n확인할 소스: ${selectedSources.join(", ")}\n실제 존재하는 브랜드 위주로 분석해주세요.`;
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-calls": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, tools: [{ type: "web_search_20250305", name: "web_search" }], system: CLAUDE_SYSTEM, messages: [{ role: "user", content: userPrompt }] }),
+        method:"POST",
+        headers:{ "Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-calls":"true" },
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2000, tools:[{type:"web_search_20250305",name:"web_search"}], system:CLAUDE_SYSTEM, messages:[{role:"user",content:userPrompt}] }),
       });
-      const data = await res.json();
-      const textBlock = data.content?.find(b=>b.type==="text");
-      if (!textBlock) throw new Error("응답 없음");
-      const raw = textBlock.text.trim().replace(/```json|```/g,"").trim();
-      const p = JSON.parse(raw);
+      const d = await res.json();
+      const tb = d.content?.find(b=>b.type==="text");
+      if (!tb) throw new Error("응답 없음");
+      const p = JSON.parse(tb.text.trim().replace(/```json|```/g,"").trim());
       setBrands(p.brands||[]); setSummary(p.summary||"");
     } catch(e) { setClaudeError("검색 오류: "+e.message); }
     finally { setClaudeLoading(false); }
@@ -162,7 +120,7 @@ export default function BrandScout() {
         </div>
       </div>
       <div style={{ maxWidth:960, margin:"0 auto", padding:"32px 24px 80px" }}>
-        {tab==="ftc" && (
+        {tab==="ftc"&&(
           <div>
             <p style={{ color:"#555", fontSize:13, fontFamily:"monospace", marginBottom:24, lineHeight:1.7 }}>공정거래위원회 공식 DB에서 신규 통신판매업 신고 업체를 조회합니다.</p>
             <div style={{ display:"flex", gap:12, marginBottom:24, flexWrap:"wrap", alignItems:"flex-end" }}>
@@ -178,20 +136,20 @@ export default function BrandScout() {
               </div>
               <button onClick={fetchFTC} disabled={ftcLoading} style={primaryBtn(ftcLoading)}>{ftcLoading?"조회중...":"조회"}</button>
             </div>
-            {ftcLoading && <Spinner text="공정위 DB 조회 중..." />}
-            {ftcError && <ErrBox msg={ftcError} />}
-            {ftcResults.length>0 && (
+            {ftcLoading&&<Spinner text="공정위 DB 조회 중..." />}
+            {ftcError&&<ErrBox msg={ftcError} />}
+            {ftcResults.length>0&&(
               <div>
                 <div style={{ fontSize:12, fontFamily:"monospace", color:"#555", marginBottom:14 }}>총 <span style={{ color:"#CCC" }}>{ftcTotal.toLocaleString()}</span>건 중 {ftcResults.length}건 표시<span style={{ color:"#333", marginLeft:10 }}>· 업체명 클릭 → 상세정보</span></div>
-                <div style={{ display:"grid", gridTemplateColumns:selectedBiz||detailLoading?"1fr 280px":"1fr", gap:12 }}>
+                <div style={{ display:"grid", gridTemplateColumns:selectedBiz?"1fr 280px":"1fr", gap:12 }}>
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                     {ftcResults.map((item,i)=>{
-                      const bizNo=item.pBizNo||item.brno;
                       const name=item.pBizNm||item.bzmnNm||"상호명 없음";
+                      const bizNo=item.pBizNo||item.brno;
                       const rd=item.pRgstDe||"";
                       const date=rd.length===8?`${rd.slice(0,4)}.${rd.slice(4,6)}.${rd.slice(6)}`:rd;
                       return (
-                        <div key={i} onClick={()=>fetchDetail(bizNo)} style={{ background:"#111", border:"1px solid #1E1E1E", borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"border-color 0.15s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="#333"} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E1E1E"}>
+                        <div key={i} onClick={()=>setSelectedBiz(item)} style={{ background:"#111", border:"1px solid #1E1E1E", borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"border-color 0.15s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="#333"} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E1E1E"}>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                             <div>
                               <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:3 }}>{name}</div>
@@ -203,20 +161,16 @@ export default function BrandScout() {
                       );
                     })}
                   </div>
-                  {(selectedBiz||detailLoading)&&(
+                  {selectedBiz&&(
                     <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"18px", height:"fit-content", position:"sticky", top:120 }}>
-                      {detailLoading?<div style={{ textAlign:"center", padding:"30px 0", color:"#444", fontFamily:"monospace", fontSize:12 }}>조회 중...</div>:selectedBiz&&(
-                        <div>
-                          <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>{selectedBiz.pBizNm||selectedBiz.bzmnNm}</div>
-                          {[["통신판매업번호",selectedBiz.pMllBsNo],["사업자등록번호",selectedBiz.pBizNo],["대표자명",selectedBiz.pRprsntvNm],["사업장주소",selectedBiz.pBplcAddr],["신고일",selectedBiz.pRgstDe],["운영상태",selectedBiz.pBsStCd],["판매방식",selectedBiz.pSlngMthdCd],["취급품목",selectedBiz.pHndlItm]].filter(([,v])=>v).map(([label,val])=>(
-                            <div key={label} style={{ marginBottom:10 }}>
-                              <div style={{ fontSize:10, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
-                              <div style={{ fontSize:13, color:"#BBB", lineHeight:1.5 }}>{val}</div>
-                            </div>
-                          ))}
-                          <button onClick={()=>setSelectedBiz(null)} style={{ marginTop:8, padding:"5px 12px", background:"transparent", border:"1px solid #2A2A2A", borderRadius:3, color:"#555", fontSize:11, fontFamily:"monospace", cursor:"pointer" }}>닫기</button>
+                      <div style={{ fontSize:15, color:"#F5F0E8", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>{selectedBiz.pBizNm||selectedBiz.bzmnNm}</div>
+                      {[["통신판매업번호",selectedBiz.pMllBsNo],["사업자등록번호",selectedBiz.pBizNo||selectedBiz.brno],["대표자명",selectedBiz.pRprsntvNm],["사업장주소",selectedBiz.pBplcAddr],["신고일",selectedBiz.pRgstDe],["운영상태",selectedBiz.pBsStCd||selectedBiz.operSttus],["판매방식",selectedBiz.pSlngMthdCd],["취급품목",selectedBiz.pHndlItm]].filter(([,v])=>v).map(([label,val])=>(
+                        <div key={label} style={{ marginBottom:10 }}>
+                          <div style={{ fontSize:10, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
+                          <div style={{ fontSize:13, color:"#BBB", lineHeight:1.5 }}>{val}</div>
                         </div>
-                      )}
+                      ))}
+                      <button onClick={()=>setSelectedBiz(null)} style={{ marginTop:8, padding:"5px 12px", background:"transparent", border:"1px solid #2A2A2A", borderRadius:3, color:"#555", fontSize:11, fontFamily:"monospace", cursor:"pointer" }}>닫기</button>
                     </div>
                   )}
                 </div>
