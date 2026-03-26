@@ -10,24 +10,32 @@ const formatDate = (d) => d.toISOString().slice(0,10).replace(/-/g,"");
 const nDaysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return formatDate(d); };
 
 const FNB_KEYWORDS = ["카페","커피","베이커리","빵","제과","파티쉐","디저트","케이크","쿠키","마카롱","푸드","식품","음료","라떼","티","차","주스","스무디","막걸리","와인","맥주","술","전통주","농장","농산물","유통","식당","맛집","치킨","피자","버거","파스타","샐러드","비건","채식","쌀","곡물","건강","영양","간식","스낵","떡","한과","김치","장류","소스","잼","꿀","초콜릿","아이스크림","젤라또","팝콘","견과","과일","채소"];
-const BEAUTY_KEYWORDS = ["뷰티","화장품","코스메틱","스킨","로션","크림","세럼","앰플","마스크","팩","선크림","향수","퍼퓸","네일","립","아이","파운데이션","쿠션","BB","CC","헤어","샴푸","트리트먼트","바디","샤워","비누","클렌징","필링"];
-
+const BEAUTY_KEYWORDS = ["뷰티","화장품","코스메틱","스킨","로션","크림","세럼","앰플","마스크","팩","선크림","향수","퍼퓸","네일","립","아이","파운데이션","쿠션","헤어","샴푸","트리트먼트","바디","샤워","비누","클렌징"];
 const classifyBiz = (name) => {
-  const n = name.toLowerCase();
+  const n = (name||"").toLowerCase();
   if (FNB_KEYWORDS.some(k => n.includes(k))) return "F&B";
   if (BEAUTY_KEYWORDS.some(k => n.includes(k))) return "뷰티";
   return "기타";
 };
-
 const categoryColors = { "F&B": "#10B981", "뷰티": "#E1306C", "기타": "#555" };
 
-const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.\n{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}\npopupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
+const ANALYZE_SYSTEM = `당신은 한국 브랜드 분석 전문가입니다. 주어진 업체명과 사업자 정보로 웹서치해서 아래 JSON 형식으로만 응답하세요. 마크다운 없이 순수 JSON만 출력하세요.
 
-const CLASSIFY_SYSTEM = `당신은 한국 사업체 분류 전문가입니다. 상호명 목록을 보고 각각의 업종을 분류해주세요. 반드시 순수 JSON만 출력하세요. 마크다운 없이.
-형식: {"results": [{"name": "상호명", "category": "F&B" 또는 "뷰티" 또는 "기타", "reason": "한줄 이유"}]}
-F&B: 식음료, 베이커리, 카페, 농식품, 주류 등
-뷰티: 화장품, 스킨케어, 헤어, 네일 등
-기타: 나머지 모두`;
+{
+  "item": "주요 취급 아이템/제품 (예: 수제 쿠키, 비건 화장품)",
+  "category": "F&B 또는 뷰티 또는 기타",
+  "instagram": "@계정명 또는 null",
+  "website": "URL 또는 null",
+  "smartstore": "스마트스토어 URL 또는 null",
+  "followers": "팔로워 수 또는 미확인",
+  "brandTone": "브랜드 감성 2-3단어",
+  "popupScore": 7,
+  "popupReason": "팝업 제안 적합 이유 (2-3문장)",
+  "summary": "업체 한줄 요약"
+}
+popupScore는 1~10. 정보가 없으면 null로 표시.`;
+
+const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.\n{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}\npopupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
 
 const labelStyle = { fontSize:10, letterSpacing:3, color:"#555", textTransform:"uppercase", fontFamily:"monospace", display:"block", marginBottom:8 };
 const inputBase = { width:"100%", background:"#111", border:"1px solid #2A2A2A", borderRadius:4, padding:"11px 14px", color:"#F5F0E8", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
@@ -35,15 +43,29 @@ const primaryBtn = (d) => ({ background:d?"#222":"#F5F0E8", color:d?"#555":"#0A0
 
 function Spinner({ text }) {
   return (
-    <div style={{ textAlign:"center", padding:"50px 0" }}>
-      <div style={{ display:"inline-block", width:28, height:28, border:"1px solid #333", borderTop:"1px solid #F5F0E8", borderRadius:"50%", animation:"spin 1s linear infinite" }} />
-      <p style={{ color:"#555", fontFamily:"monospace", fontSize:11, letterSpacing:2, marginTop:16, textTransform:"uppercase" }}>{text}</p>
+    <div style={{ textAlign:"center", padding:"30px 0" }}>
+      <div style={{ display:"inline-block", width:22, height:22, border:"1px solid #333", borderTop:"1px solid #F5F0E8", borderRadius:"50%", animation:"spin 1s linear infinite" }} />
+      <p style={{ color:"#555", fontFamily:"monospace", fontSize:10, letterSpacing:2, marginTop:12, textTransform:"uppercase" }}>{text}</p>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 function ErrBox({ msg }) {
   return <div style={{ background:"#1A0A0A", border:"1px solid #3A1A1A", borderRadius:4, padding:"14px 18px", color:"#EF4444", fontFamily:"monospace", fontSize:12, marginBottom:16 }}>{msg}</div>;
+}
+function ScoreBar({ score }) {
+  const color = score>=8?"#10B981":score>=6?"#F59E0B":"#EF4444";
+  return (
+    <div style={{ marginBottom:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+        <span style={{ fontSize:10, color:"#555", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase" }}>팝업 적합도</span>
+        <span style={{ fontSize:14, fontFamily:"monospace", color, fontWeight:700 }}>{score}/10</span>
+      </div>
+      <div style={{ height:3, background:"#1A1A1A", borderRadius:2 }}>
+        <div style={{ height:3, width:`${score*10}%`, background:color, borderRadius:2, transition:"width 0.5s" }} />
+      </div>
+    </div>
+  );
 }
 
 export default function BrandScout() {
@@ -56,8 +78,9 @@ export default function BrandScout() {
   const [ftcError, setFtcError] = useState("");
   const [ftcTotal, setFtcTotal] = useState(0);
   const [selectedBiz, setSelectedBiz] = useState(null);
-  const [classifying, setClassifying] = useState(false);
   const [classified, setClassified] = useState({});
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
 
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState("전체");
@@ -69,7 +92,7 @@ export default function BrandScout() {
   const [claudeSearched, setClaudeSearched] = useState(false);
 
   const fetchFTC = async () => {
-    setFtcLoading(true); setFtcError(""); setFtcResults([]); setSelectedBiz(null); setFtcTotal(0); setClassified({});
+    setFtcLoading(true); setFtcError(""); setFtcResults([]); setSelectedBiz(null); setFtcTotal(0); setClassified({}); setAnalysis(null);
     const params = new URLSearchParams({
       fromYmd: nDaysAgo(parseInt(days)),
       toYmd: formatDate(today),
@@ -77,68 +100,66 @@ export default function BrandScout() {
     });
     try {
       const res = await fetch(`/api/ftc?${params}`);
-      const text = await res.text();
-      const data = JSON.parse(text);
+      const data = JSON.parse(await res.text());
       const total = data?.totalCount ?? data?.response?.body?.totalCount ?? 0;
       setFtcTotal(total);
       const items = data?.items ?? data?.response?.body?.items?.item ?? null;
-      if (!items || (Array.isArray(items) && items.length === 0)) {
-        setFtcError("조회 결과가 없습니다."); return;
-      }
+      if (!items || (Array.isArray(items) && items.length === 0)) { setFtcError("조회 결과가 없습니다."); return; }
       const list = Array.isArray(items) ? items : [items];
-      // 1차: 키워드 기반 즉시 분류
       const initialClassified = {};
-      list.forEach(item => {
-        const name = item.bzmnNm || "";
-        initialClassified[name] = classifyBiz(name);
-      });
+      list.forEach(item => { initialClassified[item.bzmnNm||""] = classifyBiz(item.bzmnNm||""); });
       setClassified(initialClassified);
       setFtcResults(list);
-      // 2차: Claude로 정밀 분류
-      classifyWithClaude(list, initialClassified);
     } catch(e) { setFtcError("오류: " + e.message); }
     finally { setFtcLoading(false); }
   };
 
-  const classifyWithClaude = async (list, initial) => {
-    if (!CLAUDE_KEY || CLAUDE_KEY === "none") return;
-    setClassifying(true);
-    const names = list.map(i => i.bzmnNm).filter(Boolean);
+  const analyzeBiz = async (item) => {
+    setSelectedBiz(item);
+    setAnalysis(null);
+    setAnalyzing(true);
+    const name = item.bzmnNm || "";
+    const bizNo = item.brno || "";
+    const addr = item.rnAddr || "";
+    const email = item.rprsvEmladr || "";
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers:{ "Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-calls":"true" },
         body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001", max_tokens:2000,
-          system: CLASSIFY_SYSTEM,
-          messages:[{ role:"user", content:`다음 상호명들을 분류해주세요:\n${names.join("\n")}` }]
+          model:"claude-haiku-4-5-20251001", max_tokens:1000,
+          tools:[{type:"web_search_20250305",name:"web_search"}],
+          system: ANALYZE_SYSTEM,
+          messages:[{ role:"user", content:`업체명: ${name}\n사업자번호: ${bizNo}\n주소: ${addr}\n이메일: ${email}\n\n이 업체를 웹서치해서 어떤 아이템을 판매하는지, SNS 계정, 팝업 가능성을 분석해주세요.` }]
         }),
       });
       const d = await res.json();
       const tb = d.content?.find(b=>b.type==="text");
-      if (!tb) return;
-      const p = JSON.parse(tb.text.trim().replace(/```json|```/g,"").trim());
-      const updated = { ...initial };
-      (p.results||[]).forEach(r => { updated[r.name] = r.category; });
-      setClassified(updated);
-    } catch {}
-    setClassifying(false);
+      if (!tb) throw new Error("응답 없음");
+      const raw = tb.text.trim().replace(/```json|```/g,"").trim();
+      const parsed = JSON.parse(raw);
+      setAnalysis(parsed);
+      setClassified(prev => ({ ...prev, [name]: parsed.category || prev[name] }));
+    } catch(e) {
+      setAnalysis({ error: "분석 실패: " + e.message });
+    }
+    setAnalyzing(false);
   };
 
-  const filteredResults = categoryFilter === "전체"
-    ? ftcResults
-    : ftcResults.filter(item => (classified[item.bzmnNm] || "기타") === categoryFilter);
+  const filteredResults = categoryFilter === "전체" ? ftcResults : ftcResults.filter(item => (classified[item.bzmnNm]||"기타") === categoryFilter);
+  const fnbCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "F&B").length;
+  const beautyCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "뷰티").length;
+  const etcCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "기타").length;
 
   const toggleSource = (src) => setSelectedSources(prev => prev.includes(src) ? prev.filter(s=>s!==src) : [...prev,src]);
 
   const claudeSearch = async () => {
     setClaudeLoading(true); setClaudeError(""); setBrands([]); setSummary(""); setClaudeSearched(true);
-    const userPrompt = `다음 조건으로 팝업 스토어 제안에 적합한 한국 F&B 브랜드를 리서치해주세요:\n${keyword.trim()?`키워드: "${keyword}"`:"키워드: 없음"}\n카테고리: ${category}\n확인할 소스: ${selectedSources.join(", ")}\n실제 존재하는 브랜드 위주로 분석해주세요.`;
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers:{ "Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-calls":"true" },
-        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2000, tools:[{type:"web_search_20250305",name:"web_search"}], system:CLAUDE_SYSTEM, messages:[{role:"user",content:userPrompt}] }),
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2000, tools:[{type:"web_search_20250305",name:"web_search"}], system:CLAUDE_SYSTEM, messages:[{role:"user",content:`다음 조건으로 팝업 스토어 제안에 적합한 한국 F&B 브랜드를 리서치해주세요:\n${keyword.trim()?`키워드: "${keyword}"`:"키워드: 없음"}\n카테고리: ${category}\n확인할 소스: ${selectedSources.join(", ")}`}] }),
       });
       const d = await res.json();
       const tb = d.content?.find(b=>b.type==="text");
@@ -151,14 +172,10 @@ export default function BrandScout() {
 
   const scoreColor = (s) => s>=8?"#10B981":s>=6?"#F59E0B":"#EF4444";
 
-  const fnbCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "F&B").length;
-  const beautyCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "뷰티").length;
-  const etcCount = ftcResults.filter(i => (classified[i.bzmnNm]||"기타") === "기타").length;
-
   return (
     <div style={{ minHeight:"100vh", background:"#0A0A0A", color:"#F5F0E8", fontFamily:"'Georgia','Times New Roman',serif" }}>
       <div style={{ borderBottom:"1px solid #1A1A1A", padding:"28px 24px 0", background:"#0A0A0A", position:"sticky", top:0, zIndex:10 }}>
-        <div style={{ maxWidth:960, margin:"0 auto" }}>
+        <div style={{ maxWidth:1100, margin:"0 auto" }}>
           <div style={{ fontSize:10, letterSpacing:4, color:"#444", fontFamily:"monospace", textTransform:"uppercase", marginBottom:6 }}>Benjamin Universe · Brand Scout</div>
           <h1 style={{ fontSize:20, fontWeight:400, margin:"0 0 20px", letterSpacing:-0.3 }}>팝업 제안 브랜드 탐색기</h1>
           <div style={{ display:"flex" }}>
@@ -168,10 +185,11 @@ export default function BrandScout() {
           </div>
         </div>
       </div>
-      <div style={{ maxWidth:960, margin:"0 auto", padding:"32px 24px 80px" }}>
+
+      <div style={{ maxWidth:1100, margin:"0 auto", padding:"32px 24px 80px" }}>
         {tab==="ftc"&&(
           <div>
-            <p style={{ color:"#555", fontSize:13, fontFamily:"monospace", marginBottom:24, lineHeight:1.7 }}>공정거래위원회 공식 DB에서 신규 통신판매업 신고 업체를 조회합니다.</p>
+            <p style={{ color:"#555", fontSize:13, fontFamily:"monospace", marginBottom:24, lineHeight:1.7 }}>공정거래위원회 공식 DB에서 신규 통신판매업 신고 업체를 조회합니다. <span style={{ color:"#333" }}>업체 클릭 시 AI가 자동 분석합니다.</span></p>
             <div style={{ display:"flex", gap:12, marginBottom:24, flexWrap:"wrap", alignItems:"flex-end" }}>
               <div style={{ minWidth:160 }}>
                 <label style={labelStyle}>지역</label>
@@ -191,42 +209,33 @@ export default function BrandScout() {
 
             {ftcResults.length>0&&(
               <div>
-                {/* 카테고리 필터 */}
                 <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
-                  {[
-                    ["전체", ftcResults.length, "#888"],
-                    ["F&B", fnbCount, "#10B981"],
-                    ["뷰티", beautyCount, "#E1306C"],
-                    ["기타", etcCount, "#555"],
-                  ].map(([cat, count, color])=>(
-                    <button key={cat} onClick={()=>setCategoryFilter(cat)} style={{
-                      padding:"6px 14px", borderRadius:3, fontSize:12, fontFamily:"monospace", cursor:"pointer", transition:"all 0.15s",
-                      border:`1px solid ${categoryFilter===cat ? color : "#2A2A2A"}`,
-                      background: categoryFilter===cat ? `${color}22` : "transparent",
-                      color: categoryFilter===cat ? color : "#555",
-                    }}>
+                  {[["전체",ftcResults.length,"#888"],["F&B",fnbCount,"#10B981"],["뷰티",beautyCount,"#E1306C"],["기타",etcCount,"#555"]].map(([cat,count,color])=>(
+                    <button key={cat} onClick={()=>setCategoryFilter(cat)} style={{ padding:"6px 14px", borderRadius:3, fontSize:12, fontFamily:"monospace", cursor:"pointer", transition:"all 0.15s", border:`1px solid ${categoryFilter===cat?color:"#2A2A2A"}`, background:categoryFilter===cat?`${color}22`:"transparent", color:categoryFilter===cat?color:"#555" }}>
                       {cat} <span style={{ opacity:0.6 }}>({count})</span>
                     </button>
                   ))}
-                  {classifying && <span style={{ fontSize:11, color:"#555", fontFamily:"monospace" }}>AI 분류 중...</span>}
                 </div>
-
                 <div style={{ fontSize:12, fontFamily:"monospace", color:"#555", marginBottom:14 }}>
                   총 <span style={{ color:"#CCC" }}>{ftcTotal.toLocaleString()}</span>건 중 {filteredResults.length}건 표시
-                  <span style={{ color:"#333", marginLeft:10 }}>· 업체명 클릭 → 상세정보</span>
+                  <span style={{ color:"#333", marginLeft:10 }}>· 클릭하면 AI가 자동 분석</span>
                 </div>
 
-                <div style={{ display:"grid", gridTemplateColumns:selectedBiz?"1fr 280px":"1fr", gap:12 }}>
+                <div style={{ display:"grid", gridTemplateColumns:selectedBiz?"1fr 340px":"1fr", gap:16 }}>
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                     {filteredResults.map((item,i)=>{
                       const name=item.bzmnNm||"상호명 없음";
                       const bizNo=item.brno;
                       const rd=item.dclrDate||"";
                       const date=rd.length===8?`${rd.slice(0,4)}.${rd.slice(4,6)}.${rd.slice(6)}`:rd;
-                      const cat = classified[name] || "기타";
-                      const catColor = categoryColors[cat];
+                      const cat=classified[name]||"기타";
+                      const catColor=categoryColors[cat];
+                      const isSelected = selectedBiz?.brno === item.brno;
                       return (
-                        <div key={i} onClick={()=>setSelectedBiz(item)} style={{ background:"#111", border:"1px solid #1E1E1E", borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"border-color 0.15s" }} onMouseEnter={e=>e.currentTarget.style.borderColor="#333"} onMouseLeave={e=>e.currentTarget.style.borderColor="#1E1E1E"}>
+                        <div key={i} onClick={()=>analyzeBiz(item)} style={{ background: isSelected?"#151515":"#111", border:`1px solid ${isSelected?"#333":"#1E1E1E"}`, borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"all 0.15s" }}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor="#333"}
+                          onMouseLeave={e=>e.currentTarget.style.borderColor=isSelected?"#333":"#1E1E1E"}
+                        >
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                             <div style={{ flex:1 }}>
                               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
@@ -234,7 +243,7 @@ export default function BrandScout() {
                                 <span style={{ fontSize:10, padding:"2px 7px", borderRadius:2, background:`${catColor}22`, color:catColor, fontFamily:"monospace" }}>{cat}</span>
                               </div>
                               <div style={{ fontSize:11, fontFamily:"monospace", color:"#555" }}>
-                                {[item.ctpvNm, item.dclrInstNm].filter(Boolean).join(" · ")}
+                                {[item.ctpvNm,item.dclrInstNm].filter(Boolean).join(" · ")}
                                 {bizNo&&<span style={{ marginLeft:10 }}>사업자: {bizNo}</span>}
                               </div>
                             </div>
@@ -246,28 +255,65 @@ export default function BrandScout() {
                   </div>
 
                   {selectedBiz&&(
-                    <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"18px", height:"fit-content", position:"sticky", top:120 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, paddingBottom:12, borderBottom:"1px solid #1A1A1A" }}>
-                        <div style={{ fontSize:15, color:"#F5F0E8" }}>{selectedBiz.bzmnNm}</div>
-                        <span style={{ fontSize:10, padding:"2px 7px", borderRadius:2, background:`${categoryColors[classified[selectedBiz.bzmnNm]||"기타"]}22`, color:categoryColors[classified[selectedBiz.bzmnNm]||"기타"], fontFamily:"monospace", flexShrink:0, marginLeft:8 }}>
-                          {classified[selectedBiz.bzmnNm]||"기타"}
-                        </span>
+                    <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"20px", height:"fit-content", position:"sticky", top:120 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, paddingBottom:14, borderBottom:"1px solid #1A1A1A" }}>
+                        <div style={{ fontSize:16, color:"#F5F0E8", fontWeight:400 }}>{selectedBiz.bzmnNm}</div>
+                        <button onClick={()=>{setSelectedBiz(null);setAnalysis(null);}} style={{ padding:"4px 10px", background:"transparent", border:"1px solid #2A2A2A", borderRadius:3, color:"#555", fontSize:11, fontFamily:"monospace", cursor:"pointer", flexShrink:0, marginLeft:8 }}>닫기</button>
                       </div>
-                      {[
-                        ["통신판매업번호", selectedBiz.prmmiMnno],
-                        ["사업자등록번호", selectedBiz.brno],
-                        ["대표자명", selectedBiz.rprsvNm],
-                        ["이메일", selectedBiz.rprsvEmladr],
-                        ["사업장주소", selectedBiz.rnAddr],
-                        ["신고일", selectedBiz.dclrDate],
-                        ["운영상태", selectedBiz.operSttusCdNm],
-                      ].filter(([,v])=>v&&v!=="N/A").map(([label,val])=>(
-                        <div key={label} style={{ marginBottom:10 }}>
-                          <div style={{ fontSize:10, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
-                          <div style={{ fontSize:13, color:"#BBB", lineHeight:1.5 }}>{val}</div>
+
+                      {/* 기본 정보 */}
+                      {[["사업자번호",selectedBiz.brno],["대표자",selectedBiz.rprsvNm],["이메일",selectedBiz.rprsvEmladr],["주소",selectedBiz.rnAddr],["신고일",selectedBiz.dclrDate],["통신판매번호",selectedBiz.prmmiMnno]].filter(([,v])=>v&&v!=="N/A").map(([label,val])=>(
+                        <div key={label} style={{ marginBottom:8 }}>
+                          <div style={{ fontSize:9, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
+                          <div style={{ fontSize:12, color:"#AAA", lineHeight:1.5, wordBreak:"break-all" }}>{val}</div>
                         </div>
                       ))}
-                      <button onClick={()=>setSelectedBiz(null)} style={{ marginTop:8, padding:"5px 12px", background:"transparent", border:"1px solid #2A2A2A", borderRadius:3, color:"#555", fontSize:11, fontFamily:"monospace", cursor:"pointer" }}>닫기</button>
+
+                      <div style={{ borderTop:"1px solid #1A1A1A", marginTop:16, paddingTop:16 }}>
+                        {analyzing && <Spinner text="AI 분석 중..." />}
+
+                        {analysis && !analysis.error && (
+                          <div>
+                            <div style={{ fontSize:10, color:"#555", fontFamily:"monospace", letterSpacing:2, textTransform:"uppercase", marginBottom:12 }}>AI 분석 결과</div>
+
+                            {analysis.item && (
+                              <div style={{ background:"#0A1A0A", border:"1px solid #1A2E1A", borderRadius:4, padding:"10px 14px", marginBottom:12 }}>
+                                <div style={{ fontSize:9, color:"#3A6A3A", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>취급 아이템</div>
+                                <div style={{ fontSize:14, color:"#8FBE8F" }}>{analysis.item}</div>
+                              </div>
+                            )}
+
+                            {analysis.summary && (
+                              <p style={{ fontSize:12, color:"#AAA", lineHeight:1.7, marginBottom:12 }}>{analysis.summary}</p>
+                            )}
+
+                            {analysis.popupScore && <ScoreBar score={analysis.popupScore} />}
+
+                            {analysis.popupReason && (
+                              <div style={{ background:"#0D1A0D", border:"1px solid #1A2E1A", borderRadius:4, padding:"10px 14px", marginBottom:12 }}>
+                                <div style={{ fontSize:9, color:"#3A6A3A", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>제안 포인트</div>
+                                <p style={{ fontSize:12, color:"#7AAE7A", lineHeight:1.7, margin:0 }}>{analysis.popupReason}</p>
+                              </div>
+                            )}
+
+                            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+                              {analysis.instagram && <a href={`https://instagram.com/${analysis.instagram.replace("@","")}`} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#E1306C", textDecoration:"none", padding:"4px 10px", border:"1px solid #E1306C33", borderRadius:3 }}>📷 {analysis.instagram}</a>}
+                              {analysis.website && <a href={analysis.website} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#4A9EFF", textDecoration:"none", padding:"4px 10px", border:"1px solid #4A9EFF33", borderRadius:3 }}>🌐 웹사이트</a>}
+                              {analysis.smartstore && <a href={analysis.smartstore} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#03C75A", textDecoration:"none", padding:"4px 10px", border:"1px solid #03C75A33", borderRadius:3 }}>🛒 스마트스토어</a>}
+                            </div>
+
+                            {analysis.brandTone && <div style={{ fontSize:11, color:"#555", fontFamily:"monospace", fontStyle:"italic" }}>감성: {analysis.brandTone}</div>}
+                          </div>
+                        )}
+
+                        {analysis?.error && <ErrBox msg={analysis.error} />}
+
+                        {!analyzing && !analysis && (
+                          <button onClick={()=>analyzeBiz(selectedBiz)} style={{ ...primaryBtn(false), width:"100%", textAlign:"center" }}>
+                            AI 분석 시작
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
