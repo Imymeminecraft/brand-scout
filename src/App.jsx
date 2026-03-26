@@ -1,10 +1,10 @@
 import { useState } from "react";
 
-const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY || "";
 const CATEGORIES = ["전체", "디저트", "베이커리", "음료/카페", "식품", "전통식품"];
 const SOURCES = ["인스타그램", "와디즈", "중소벤처기업부", "소상공인시장진흥공단"];
 const sourceColors = { "인스타그램": "#E1306C", "와디즈": "#FF4F4F", "중소벤처기업부": "#2563EB", "소상공인시장진흥공단": "#059669" };
 const REGIONS = ["전체","서울특별시","경기도","인천광역시","부산광역시","대구광역시","광주광역시","대전광역시","울산광역시","세종특별자치시","강원도","충청북도","충청남도","전라북도","전라남도","경상북도","경상남도","제주특별자치도"];
+const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY || "";
 const today = new Date();
 const formatDate = (d) => d.toISOString().slice(0,10).replace(/-/g,"");
 const nDaysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return formatDate(d); };
@@ -18,22 +18,6 @@ const classifyBiz = (name) => {
   return "기타";
 };
 const categoryColors = { "F&B": "#10B981", "뷰티": "#E1306C", "기타": "#555" };
-
-const ANALYZE_SYSTEM = `당신은 한국 브랜드 분석 전문가입니다. 주어진 업체명과 사업자 정보로 웹서치해서 아래 JSON 형식으로만 응답하세요. 마크다운 없이 순수 JSON만 출력하세요.
-
-{
-  "item": "주요 취급 아이템/제품 (예: 수제 쿠키, 비건 화장품)",
-  "category": "F&B 또는 뷰티 또는 기타",
-  "instagram": "@계정명 또는 null",
-  "website": "URL 또는 null",
-  "smartstore": "스마트스토어 URL 또는 null",
-  "followers": "팔로워 수 또는 미확인",
-  "brandTone": "브랜드 감성 2-3단어",
-  "popupScore": 7,
-  "popupReason": "팝업 제안 적합 이유 (2-3문장)",
-  "summary": "업체 한줄 요약"
-}
-popupScore는 1~10. 정보가 없으면 null로 표시.`;
 
 const CLAUDE_SYSTEM = `당신은 한국 F&B 브랜드 전문 리서처입니다. 팝업 스토어 제안에 적합한 브랜드를 분석해 반드시 아래 JSON 형식으로만 응답하세요. 마크다운이나 추가 텍스트 없이 순수 JSON만 출력하세요.\n{"brands":[{"name":"브랜드명","instagram":"@계정명 또는 null","followers":"팔로워 규모 또는 미확인","website":"URL 또는 null","category":"카테고리","sources":["출처"],"description":"한줄 설명","aesthetic":"감성 2-3단어","popupScore":7,"proposalPoint":"제안 이유"}],"summary":"요약"}\npopupScore는 1~10 사이 정수. 최소 4개, 최대 8개 반환.`;
 
@@ -81,7 +65,6 @@ export default function BrandScout() {
   const [classified, setClassified] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(null);
-
   const [keyword, setKeyword] = useState("");
   const [category, setCategory] = useState("전체");
   const [selectedSources, setSelectedSources] = useState(SOURCES);
@@ -106,9 +89,9 @@ export default function BrandScout() {
       const items = data?.items ?? data?.response?.body?.items?.item ?? null;
       if (!items || (Array.isArray(items) && items.length === 0)) { setFtcError("조회 결과가 없습니다."); return; }
       const list = Array.isArray(items) ? items : [items];
-      const initialClassified = {};
-      list.forEach(item => { initialClassified[item.bzmnNm||""] = classifyBiz(item.bzmnNm||""); });
-      setClassified(initialClassified);
+      const init = {};
+      list.forEach(item => { init[item.bzmnNm||""] = classifyBiz(item.bzmnNm||""); });
+      setClassified(init);
       setFtcResults(list);
     } catch(e) { setFtcError("오류: " + e.message); }
     finally { setFtcLoading(false); }
@@ -118,28 +101,21 @@ export default function BrandScout() {
     setSelectedBiz(item);
     setAnalysis(null);
     setAnalyzing(true);
-    const name = item.bzmnNm || "";
-    const bizNo = item.brno || "";
-    const addr = item.rnAddr || "";
-    const email = item.rprsvEmladr || "";
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-calls":"true" },
-        body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001", max_tokens:1000,
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          system: ANALYZE_SYSTEM,
-          messages:[{ role:"user", content:`업체명: ${name}\n사업자번호: ${bizNo}\n주소: ${addr}\n이메일: ${email}\n\n이 업체를 웹서치해서 어떤 아이템을 판매하는지, SNS 계정, 팝업 가능성을 분석해주세요.` }]
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: item.bzmnNm || "",
+          bizNo: item.brno || "",
+          addr: item.rnAddr || "",
+          email: item.rprsvEmladr || "",
         }),
       });
-      const d = await res.json();
-      const tb = d.content?.find(b=>b.type==="text");
-      if (!tb) throw new Error("응답 없음");
-      const raw = tb.text.trim().replace(/```json|```/g,"").trim();
-      const parsed = JSON.parse(raw);
+      const parsed = await res.json();
+      if (parsed.error) throw new Error(parsed.error);
       setAnalysis(parsed);
-      setClassified(prev => ({ ...prev, [name]: parsed.category || prev[name] }));
+      setClassified(prev => ({ ...prev, [item.bzmnNm||""]: parsed.category || prev[item.bzmnNm||""] }));
     } catch(e) {
       setAnalysis({ error: "분석 실패: " + e.message });
     }
@@ -209,7 +185,7 @@ export default function BrandScout() {
 
             {ftcResults.length>0&&(
               <div>
-                <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+                <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
                   {[["전체",ftcResults.length,"#888"],["F&B",fnbCount,"#10B981"],["뷰티",beautyCount,"#E1306C"],["기타",etcCount,"#555"]].map(([cat,count,color])=>(
                     <button key={cat} onClick={()=>setCategoryFilter(cat)} style={{ padding:"6px 14px", borderRadius:3, fontSize:12, fontFamily:"monospace", cursor:"pointer", transition:"all 0.15s", border:`1px solid ${categoryFilter===cat?color:"#2A2A2A"}`, background:categoryFilter===cat?`${color}22`:"transparent", color:categoryFilter===cat?color:"#555" }}>
                       {cat} <span style={{ opacity:0.6 }}>({count})</span>
@@ -230,9 +206,10 @@ export default function BrandScout() {
                       const date=rd.length===8?`${rd.slice(0,4)}.${rd.slice(4,6)}.${rd.slice(6)}`:rd;
                       const cat=classified[name]||"기타";
                       const catColor=categoryColors[cat];
-                      const isSelected = selectedBiz?.brno === item.brno;
+                      const isSelected=selectedBiz?.brno===item.brno;
                       return (
-                        <div key={i} onClick={()=>analyzeBiz(item)} style={{ background: isSelected?"#151515":"#111", border:`1px solid ${isSelected?"#333":"#1E1E1E"}`, borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"all 0.15s" }}
+                        <div key={i} onClick={()=>analyzeBiz(item)}
+                          style={{ background:isSelected?"#151515":"#111", border:`1px solid ${isSelected?"#333":"#1E1E1E"}`, borderRadius:5, padding:"13px 16px", cursor:"pointer", transition:"all 0.15s" }}
                           onMouseEnter={e=>e.currentTarget.style.borderColor="#333"}
                           onMouseLeave={e=>e.currentTarget.style.borderColor=isSelected?"#333":"#1E1E1E"}
                         >
@@ -257,11 +234,10 @@ export default function BrandScout() {
                   {selectedBiz&&(
                     <div style={{ background:"#111", border:"1px solid #2A2A2A", borderRadius:6, padding:"20px", height:"fit-content", position:"sticky", top:120 }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, paddingBottom:14, borderBottom:"1px solid #1A1A1A" }}>
-                        <div style={{ fontSize:16, color:"#F5F0E8", fontWeight:400 }}>{selectedBiz.bzmnNm}</div>
+                        <div style={{ fontSize:16, color:"#F5F0E8" }}>{selectedBiz.bzmnNm}</div>
                         <button onClick={()=>{setSelectedBiz(null);setAnalysis(null);}} style={{ padding:"4px 10px", background:"transparent", border:"1px solid #2A2A2A", borderRadius:3, color:"#555", fontSize:11, fontFamily:"monospace", cursor:"pointer", flexShrink:0, marginLeft:8 }}>닫기</button>
                       </div>
 
-                      {/* 기본 정보 */}
                       {[["사업자번호",selectedBiz.brno],["대표자",selectedBiz.rprsvNm],["이메일",selectedBiz.rprsvEmladr],["주소",selectedBiz.rnAddr],["신고일",selectedBiz.dclrDate],["통신판매번호",selectedBiz.prmmiMnno]].filter(([,v])=>v&&v!=="N/A").map(([label,val])=>(
                         <div key={label} style={{ marginBottom:8 }}>
                           <div style={{ fontSize:9, color:"#444", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>{label}</div>
@@ -270,26 +246,23 @@ export default function BrandScout() {
                       ))}
 
                       <div style={{ borderTop:"1px solid #1A1A1A", marginTop:16, paddingTop:16 }}>
-                        {analyzing && <Spinner text="AI 분석 중..." />}
+                        {analyzing&&<Spinner text="AI 분석 중..." />}
 
-                        {analysis && !analysis.error && (
+                        {analysis&&!analysis.error&&(
                           <div>
                             <div style={{ fontSize:10, color:"#555", fontFamily:"monospace", letterSpacing:2, textTransform:"uppercase", marginBottom:12 }}>AI 분석 결과</div>
 
-                            {analysis.item && (
+                            {analysis.item&&(
                               <div style={{ background:"#0A1A0A", border:"1px solid #1A2E1A", borderRadius:4, padding:"10px 14px", marginBottom:12 }}>
                                 <div style={{ fontSize:9, color:"#3A6A3A", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>취급 아이템</div>
                                 <div style={{ fontSize:14, color:"#8FBE8F" }}>{analysis.item}</div>
                               </div>
                             )}
 
-                            {analysis.summary && (
-                              <p style={{ fontSize:12, color:"#AAA", lineHeight:1.7, marginBottom:12 }}>{analysis.summary}</p>
-                            )}
+                            {analysis.summary&&<p style={{ fontSize:12, color:"#AAA", lineHeight:1.7, marginBottom:12 }}>{analysis.summary}</p>}
+                            {analysis.popupScore&&<ScoreBar score={analysis.popupScore} />}
 
-                            {analysis.popupScore && <ScoreBar score={analysis.popupScore} />}
-
-                            {analysis.popupReason && (
+                            {analysis.popupReason&&(
                               <div style={{ background:"#0D1A0D", border:"1px solid #1A2E1A", borderRadius:4, padding:"10px 14px", marginBottom:12 }}>
                                 <div style={{ fontSize:9, color:"#3A6A3A", fontFamily:"monospace", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>제안 포인트</div>
                                 <p style={{ fontSize:12, color:"#7AAE7A", lineHeight:1.7, margin:0 }}>{analysis.popupReason}</p>
@@ -297,22 +270,17 @@ export default function BrandScout() {
                             )}
 
                             <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
-                              {analysis.instagram && <a href={`https://instagram.com/${analysis.instagram.replace("@","")}`} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#E1306C", textDecoration:"none", padding:"4px 10px", border:"1px solid #E1306C33", borderRadius:3 }}>📷 {analysis.instagram}</a>}
-                              {analysis.website && <a href={analysis.website} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#4A9EFF", textDecoration:"none", padding:"4px 10px", border:"1px solid #4A9EFF33", borderRadius:3 }}>🌐 웹사이트</a>}
-                              {analysis.smartstore && <a href={analysis.smartstore} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#03C75A", textDecoration:"none", padding:"4px 10px", border:"1px solid #03C75A33", borderRadius:3 }}>🛒 스마트스토어</a>}
+                              {analysis.instagram&&<a href={`https://instagram.com/${analysis.instagram.replace("@","")}`} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#E1306C", textDecoration:"none", padding:"4px 10px", border:"1px solid #E1306C33", borderRadius:3 }}>📷 {analysis.instagram}</a>}
+                              {analysis.website&&<a href={analysis.website} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#4A9EFF", textDecoration:"none", padding:"4px 10px", border:"1px solid #4A9EFF33", borderRadius:3 }}>🌐 웹사이트</a>}
+                              {analysis.smartstore&&<a href={analysis.smartstore} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#03C75A", textDecoration:"none", padding:"4px 10px", border:"1px solid #03C75A33", borderRadius:3 }}>🛒 스마트스토어</a>}
+                              {analysis.wadiz&&<a href={analysis.wadiz} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, fontFamily:"monospace", color:"#FF4F4F", textDecoration:"none", padding:"4px 10px", border:"1px solid #FF4F4F33", borderRadius:3 }}>🚀 와디즈</a>}
                             </div>
 
-                            {analysis.brandTone && <div style={{ fontSize:11, color:"#555", fontFamily:"monospace", fontStyle:"italic" }}>감성: {analysis.brandTone}</div>}
+                            {analysis.brandTone&&<div style={{ fontSize:11, color:"#555", fontFamily:"monospace", fontStyle:"italic" }}>감성: {analysis.brandTone}</div>}
                           </div>
                         )}
 
-                        {analysis?.error && <ErrBox msg={analysis.error} />}
-
-                        {!analyzing && !analysis && (
-                          <button onClick={()=>analyzeBiz(selectedBiz)} style={{ ...primaryBtn(false), width:"100%", textAlign:"center" }}>
-                            AI 분석 시작
-                          </button>
-                        )}
+                        {analysis?.error&&<ErrBox msg={analysis.error} />}
                       </div>
                     </div>
                   )}
