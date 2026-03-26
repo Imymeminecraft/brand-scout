@@ -8,8 +8,7 @@ export default async function handler(req, res) {
   const { name, bizNo, addr, email } = req.body;
 
   try {
-    // 1단계: 웹서치로 정보 수집
-    const searchRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -18,47 +17,29 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 2000,
+        max_tokens: 1000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
-        system: "한국 브랜드 리서처입니다. 주어진 업체를 웹서치해서 정보를 수집하세요.",
-        messages: [{ role: "user", content: `"${name}" 업체를 검색해서 어떤 제품/서비스를 판매하는지, 인스타그램, 스마트스토어, 와디즈 링크를 찾아주세요. 사업자번호: ${bizNo}, 주소: ${addr}` }],
-      }),
-    });
+        tool_choice: { type: "auto" },
+        system: `당신은 한국 브랜드 분석가입니다. 업체를 웹서치한 후 반드시 아래 JSON 형식으로만 최종 답변하세요. JSON 외 텍스트 절대 금지.
 
-    const searchData = await searchRes.json();
-    const searchText = searchData.content?.filter(b => b.type === "text").map(b => b.text).join("\n") || "";
-
-    // 2단계: 수집된 정보로 JSON 생성
-    const jsonRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": CLAUDE_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 800,
-        system: "JSON만 출력하세요. 다른 텍스트 금지.",
+최종 답변 형식:
+{"item":"취급아이템","category":"F&B또는뷰티또는기타","instagram":"@계정또는null","website":"URL또는null","smartstore":"URL또는null","wadiz":"URL또는null","followers":"팔로워수또는미확인","brandTone":"감성키워드","popupScore":7,"popupReason":"팝업제안이유","summary":"한줄요약"}`,
         messages: [{
           role: "user",
-          content: `아래 리서치 결과를 바탕으로 JSON만 출력하세요:
-
-리서치 결과:
-${searchText}
-
-업체명: ${name}
-
-출력 형식 (이것만 출력, 다른 텍스트 없이):
-{"item":"취급 아이템","category":"F&B 또는 뷰티 또는 기타","instagram":"@계정 또는 null","website":"URL 또는 null","smartstore":"URL 또는 null","wadiz":"URL 또는 null","followers":"팔로워수 또는 미확인","brandTone":"감성 2-3단어","popupScore":7,"popupReason":"팝업 제안 이유","summary":"한줄 요약"}`
+          content: `업체명: ${name}, 사업자번호: ${bizNo}, 주소: ${addr}\n\n이 업체를 검색해서 취급 아이템, SNS, 팝업 적합도를 분석 후 JSON으로만 답변하세요.`
         }],
       }),
     });
 
-    const jsonData = await jsonRes.json();
-    const rawText = jsonData.content?.find(b => b.type === "text")?.text || "";
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("JSON 추출 실패");
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message || "API 오류");
+
+    const textBlock = data.content?.find(b => b.type === "text");
+    if (!textBlock?.text) throw new Error("텍스트 응답 없음");
+
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("JSON 없음: " + textBlock.text.slice(0, 100));
+
     const parsed = JSON.parse(jsonMatch[0]);
     res.status(200).json(parsed);
   } catch (e) {
